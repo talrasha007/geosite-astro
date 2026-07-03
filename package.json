@@ -12,7 +12,7 @@
 		"astro": "astro",
 		"generate-types": "wrangler types",
 		"update-geodata": "node scripts/update-geodata.mjs",
-		"deploy": "npm run update-geodata && astro build && wrangler deploy",
+		"deploy": "astro build && wrangler deploy",
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
