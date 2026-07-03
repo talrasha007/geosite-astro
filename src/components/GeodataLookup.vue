@@ -40,6 +40,13 @@ const lookupKind = computed<'ip' | 'domain'>(() => (looksLikeIp(lookupInput.valu
 // source (geosite/geoip) a previously-shown result belongs to.
 const lastLookupKind = ref<'ip' | 'domain'>('domain');
 
+const lookupProgressHint = computed(() => {
+  const stage = progress.value[lookupKind.value === 'ip' ? 'geoip' : 'geosite'];
+  if (stage === 'downloading') return t.value.downloading;
+  if (stage === 'parsing') return t.value.parsing;
+  return '';
+});
+
 async function runLookup() {
   const input = lookupInput.value.trim();
   if (!input || !client) return;
@@ -233,9 +240,7 @@ async function refreshCache() {
         <button type="submit" :disabled="lookupLoading || !lookupInput.trim()">{{ t.lookupButton }}</button>
       </form>
       <p class="hint">{{ lookupKind === 'ip' ? t.detectedIp : t.detectedDomain }}</p>
-      <p class="progress" v-if="progress[lookupKind === 'ip' ? 'geoip' : 'geosite'] !== 'ready' && lookupLoading">
-        {{ { downloading: t.downloading, parsing: t.parsing, idle: '' }[progress[lookupKind === 'ip' ? 'geoip' : 'geosite']] }}
-      </p>
+      <p class="progress" v-if="lookupProgressHint && lookupLoading">{{ lookupProgressHint }}</p>
       <p v-if="lookupError" class="error">{{ lookupError }}</p>
       <div v-if="lookupResults">
         <p v-if="lookupResults.length === 0">{{ t.noMatch }}</p>
