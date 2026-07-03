@@ -8,6 +8,12 @@
 		"directory": "./dist",
 		"binding": "ASSETS"
 	},
+	"r2_buckets": [
+		{
+			"binding": "GEODATA",
+			"bucket_name": "geodata"
+		}
+	],
 	"observability": {
 		"enabled": true
 	}
