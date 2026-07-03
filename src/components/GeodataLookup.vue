@@ -4,8 +4,14 @@ import type { CidrEntry } from '../lib/geodata/geoip';
 import { looksLikeIp } from '../lib/geodata/geoip';
 import type { DomainEntry } from '../lib/geodata/geosite';
 import { GeodataClient, type ProgressStage } from '../lib/geodata/workerClient';
+import { messages } from '../lib/i18n';
+import { useLocale, useTheme } from '../lib/preferences';
 
 const PAGE_SIZE = 100;
+
+const { theme, toggleTheme } = useTheme();
+const { locale, toggleLocale } = useLocale();
+const t = computed(() => messages[locale.value]);
 
 const activeTab = ref<'lookup' | 'browse'>('lookup');
 const progress = ref<Record<'geosite' | 'geoip', ProgressStage | 'idle'>>({ geosite: 'idle', geoip: 'idle' });
@@ -68,7 +74,7 @@ const loadingHint = computed(() => {
   const parts: string[] = [];
   if (progress.value.geosite === 'downloading' || progress.value.geosite === 'parsing') parts.push('geosite.dat');
   if (progress.value.geoip === 'downloading' || progress.value.geoip === 'parsing') parts.push('geoip.dat');
-  return parts.length ? `正在下载并解析 ${parts.join(' 和 ')}…` : '';
+  return parts.length ? `${t.value.loadingBothPrefix} ${parts.join(t.value.joiner)}…` : '';
 });
 
 const ruleQuery = ref('');
@@ -134,6 +140,15 @@ function selectFirstSuggestion() {
 const totalPages = computed(() => Math.max(1, Math.ceil(browseItems.value.length / PAGE_SIZE)));
 const pagedItems = computed(() => browseItems.value.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE));
 
+const ruleSummaryText = computed(() => {
+  if (!selectedRule.value) return '';
+  const { name, source } = selectedRule.value;
+  const count = browseItems.value.length;
+  return locale.value === 'zh'
+    ? `${name}（${source}）共 ${count} 条，第 ${page.value} / ${totalPages.value} 页`
+    : `${name} (${source}) — ${count} entries, page ${page.value} / ${totalPages.value}`;
+});
+
 async function selectRule(name: string, source: RuleSource) {
   if (!client) return;
   ensureCategoriesLoaded();
@@ -170,27 +185,60 @@ function formatIp(bytes: Uint8Array): string {
 function isCidrEntry(item: DomainEntry | CidrEntry): item is CidrEntry {
   return selectedRule.value?.source === 'geoip';
 }
+
+// --- Header actions ---
+const refreshing = ref(false);
+
+async function refreshCache() {
+  if (!client || refreshing.value) return;
+  refreshing.value = true;
+  try {
+    await client.refreshCache();
+    // The in-memory index and any data pulled from it are now stale.
+    lookupResults.value = null;
+    selectedRule.value = null;
+    browseItems.value = [];
+    geoSiteCategories.value = [];
+    geoIpCategories.value = [];
+    categoriesLoadStarted = false;
+  } finally {
+    refreshing.value = false;
+  }
+}
 </script>
 
 <template>
   <div class="tool">
-    <nav class="tabs">
-      <button type="button" :class="{ active: activeTab === 'lookup' }" @click="activeTab = 'lookup'">域名 / IP 查询</button>
-      <button type="button" :class="{ active: activeTab === 'browse' }" @click="activeTab = 'browse'; ensureCategoriesLoaded()">规则名查询</button>
-    </nav>
+    <div class="header">
+      <nav class="tabs">
+        <button type="button" :class="{ active: activeTab === 'lookup' }" @click="activeTab = 'lookup'">{{ t.tabLookup }}</button>
+        <button type="button" :class="{ active: activeTab === 'browse' }" @click="activeTab = 'browse'; ensureCategoriesLoaded()">{{ t.tabBrowse }}</button>
+      </nav>
+      <div class="actions">
+        <button type="button" class="icon-button" :disabled="refreshing" :title="t.refreshCache" @click="refreshCache">
+          🔄 {{ refreshing ? t.refreshingCache : t.refreshCache }}
+        </button>
+        <button type="button" class="icon-button" :title="t.themeToggleTitle" @click="toggleTheme">
+          {{ theme === 'dark' ? '☀️' : '🌙' }}
+        </button>
+        <button type="button" class="icon-button" :title="t.localeToggleTitle" @click="toggleLocale">
+          {{ locale === 'zh' ? 'EN' : '中' }}
+        </button>
+      </div>
+    </div>
 
     <section v-if="activeTab === 'lookup'" class="panel">
       <form @submit.prevent="runLookup">
-        <input v-model="lookupInput" type="text" placeholder="输入域名或 IP，例如 google.com 或 8.8.8.8" />
-        <button type="submit" :disabled="lookupLoading || !lookupInput.trim()">查询</button>
+        <input v-model="lookupInput" type="text" :placeholder="t.lookupPlaceholder" />
+        <button type="submit" :disabled="lookupLoading || !lookupInput.trim()">{{ t.lookupButton }}</button>
       </form>
-      <p class="hint">识别为：{{ lookupKind === 'ip' ? 'IP 地址（查询 geoip.dat）' : '域名（查询 geosite.dat）' }}</p>
+      <p class="hint">{{ lookupKind === 'ip' ? t.detectedIp : t.detectedDomain }}</p>
       <p class="progress" v-if="progress[lookupKind === 'ip' ? 'geoip' : 'geosite'] !== 'ready' && lookupLoading">
-        {{ { downloading: '正在下载数据文件…', parsing: '正在解析数据…', idle: '' }[progress[lookupKind === 'ip' ? 'geoip' : 'geosite']] }}
+        {{ { downloading: t.downloading, parsing: t.parsing, idle: '' }[progress[lookupKind === 'ip' ? 'geoip' : 'geosite']] }}
       </p>
       <p v-if="lookupError" class="error">{{ lookupError }}</p>
       <div v-if="lookupResults">
-        <p v-if="lookupResults.length === 0">未命中任何规则。</p>
+        <p v-if="lookupResults.length === 0">{{ t.noMatch }}</p>
         <ul v-else class="tag-list">
           <li v-for="rule in lookupResults" :key="rule">
             <button type="button" class="tag-button" @click="goToRule(rule)">{{ rule }}</button>
@@ -205,7 +253,7 @@ function isCidrEntry(item: DomainEntry | CidrEntry): item is CidrEntry {
           v-model="ruleQuery"
           type="text"
           autocomplete="off"
-          placeholder="输入规则名，例如 google、cn…（同时搜索 geosite 与 geoip）"
+          :placeholder="t.rulePlaceholder"
           @focus="handleRuleInputFocus"
           @blur="handleRuleInputBlur"
           @input="showDropdown = true"
@@ -221,10 +269,10 @@ function isCidrEntry(item: DomainEntry | CidrEntry): item is CidrEntry {
       </div>
       <p class="progress" v-if="loadingHint">{{ loadingHint }}</p>
 
-      <div v-if="browseLoading">加载中…</div>
+      <div v-if="browseLoading">{{ t.loading }}</div>
       <p v-else-if="browseError" class="error">{{ browseError }}</p>
       <div v-else-if="selectedRule">
-        <p>{{ selectedRule.name }}（{{ selectedRule.source }}）共 {{ browseItems.length }} 条，第 {{ page }} / {{ totalPages }} 页</p>
+        <p>{{ ruleSummaryText }}</p>
         <ul class="entry-list">
           <li v-for="(item, i) in pagedItems" :key="i">
             <template v-if="isCidrEntry(item)">{{ formatIp(item.ip) }}/{{ item.prefix }}</template>
@@ -232,34 +280,89 @@ function isCidrEntry(item: DomainEntry | CidrEntry): item is CidrEntry {
           </li>
         </ul>
         <div class="pager">
-          <button type="button" :disabled="page <= 1" @click="page--">上一页</button>
-          <button type="button" :disabled="page >= totalPages" @click="page++">下一页</button>
+          <button type="button" :disabled="page <= 1" @click="page--">{{ t.prevPage }}</button>
+          <button type="button" :disabled="page >= totalPages" @click="page++">{{ t.nextPage }}</button>
         </div>
       </div>
     </section>
   </div>
 </template>
 
+<style>
+:root {
+  --bg: #ffffff;
+  --fg: #1a1a1a;
+  --muted: #666666;
+  --error: #cc0000;
+  --panel-border: #cccccc;
+  --tab-bg: #f5f5f5;
+  --tab-active-bg: #333333;
+  --tab-active-fg: #ffffff;
+  --tag-bg: #eeeeee;
+  --tag-hover-bg: #dddddd;
+  --input-bg: #ffffff;
+  --source-tag: #888888;
+  color-scheme: light;
+}
+:root[data-theme='dark'] {
+  --bg: #1a1a1a;
+  --fg: #e8e8e8;
+  --muted: #999999;
+  --error: #ff6b6b;
+  --panel-border: #444444;
+  --tab-bg: #2a2a2a;
+  --tab-active-bg: #eeeeee;
+  --tab-active-fg: #111111;
+  --tag-bg: #333333;
+  --tag-hover-bg: #444444;
+  --input-bg: #2a2a2a;
+  --source-tag: #aaaaaa;
+  color-scheme: dark;
+}
+body {
+  background: var(--bg);
+  color: var(--fg);
+}
+</style>
+
 <style scoped>
 .tool {
   max-width: 720px;
   margin: 2rem auto;
   font-family: system-ui, sans-serif;
+  color: var(--fg);
+}
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 .tabs {
   display: flex;
   gap: 0.5rem;
-  margin-bottom: 1rem;
 }
 .tabs button {
   padding: 0.5rem 1rem;
-  border: 1px solid #ccc;
-  background: #f5f5f5;
+  border: 1px solid var(--panel-border);
+  background: var(--tab-bg);
+  color: var(--fg);
   cursor: pointer;
 }
 .tabs button.active {
-  background: #333;
-  color: #fff;
+  background: var(--tab-active-bg);
+  color: var(--tab-active-fg);
+}
+.actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.icon-button {
+  border: 1px solid var(--panel-border);
+  background: var(--tag-bg);
+  border-radius: 4px;
 }
 .panel form {
   display: flex;
@@ -268,19 +371,31 @@ function isCidrEntry(item: DomainEntry | CidrEntry): item is CidrEntry {
 input[type='text'] {
   flex: 1;
   padding: 0.4rem;
+  background: var(--input-bg);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
 }
 button {
   padding: 0.4rem 0.8rem;
+  color: var(--fg);
+  background: var(--tag-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 4px;
+  cursor: pointer;
+}
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 .hint {
-  color: #666;
+  color: var(--muted);
   font-size: 0.9rem;
 }
 .progress {
-  color: #666;
+  color: var(--muted);
 }
 .error {
-  color: #c00;
+  color: var(--error);
 }
 .tag-list {
   list-style: none;
@@ -290,14 +405,14 @@ button {
   gap: 0.4rem;
 }
 .tag-button {
-  background: #eee;
+  background: var(--tag-bg);
   border: none;
   padding: 0.2rem 0.6rem;
   border-radius: 4px;
   cursor: pointer;
 }
 .tag-button:hover {
-  background: #ddd;
+  background: var(--tag-hover-bg);
 }
 .rule-search {
   position: relative;
@@ -317,8 +432,8 @@ button {
   list-style: none;
   max-height: 280px;
   overflow-y: auto;
-  background: #fff;
-  border: 1px solid #ccc;
+  background: var(--bg);
+  border: 1px solid var(--panel-border);
   border-top: none;
 }
 .suggestions li button {
@@ -331,10 +446,10 @@ button {
   cursor: pointer;
 }
 .suggestions li button:hover {
-  background: #eee;
+  background: var(--tag-hover-bg);
 }
 .source-tag {
-  color: #888;
+  color: var(--source-tag);
   font-size: 0.8rem;
 }
 .entry-list {

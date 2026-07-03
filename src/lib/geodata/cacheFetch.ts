@@ -1,9 +1,9 @@
-const CACHE_NAME = 'geodata-v1';
+export const GEODATA_CACHE_NAME = 'geodata-v1';
 
 // Persists the raw .dat bytes across sessions via the Cache API, revalidating
 // against the R2-backed route's ETag so unchanged files aren't re-downloaded.
 export async function fetchWithCache(url: string): Promise<ArrayBuffer> {
-  const cache = await caches.open(CACHE_NAME);
+  const cache = await caches.open(GEODATA_CACHE_NAME);
   const cached = await cache.match(url);
 
   const etag = cached?.headers.get('etag');

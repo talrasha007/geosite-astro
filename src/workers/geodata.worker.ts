@@ -1,5 +1,5 @@
 import { GEOIP_ROUTE, GEOSITE_ROUTE } from '../lib/geodata/constants';
-import { fetchWithCache } from '../lib/geodata/cacheFetch';
+import { fetchWithCache, GEODATA_CACHE_NAME } from '../lib/geodata/cacheFetch';
 import { buildGeoIPIndex, getCategoryCidrs, listCategories as listGeoIpCategories, matchIp, parseGeoIPList, type GeoIPIndex } from '../lib/geodata/geoip';
 import { buildGeoSiteIndex, getCategoryDomains, listCategories as listGeoSiteCategories, matchDomain, parseGeoSiteList, type GeoSiteIndex } from '../lib/geodata/geosite';
 import type { ProgressStage, WorkerRequest, WorkerResponse } from '../lib/geodata/workerClient';
@@ -67,6 +67,13 @@ self.onmessage = async (e: MessageEvent<WorkerRequest>) => {
         break;
       case 'getCategoryCidrs':
         result = getCategoryCidrs(await ensureGeoIpLoaded(), req.category);
+        break;
+      case 'refreshCache':
+        geoSiteIndex = null;
+        geoIpIndex = null;
+        geoSiteLoading = null;
+        geoIpLoading = null;
+        await caches.delete(GEODATA_CACHE_NAME);
         break;
     }
     self.postMessage({ id: req.id, ok: true, result } satisfies WorkerResponse);

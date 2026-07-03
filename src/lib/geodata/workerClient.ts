@@ -7,7 +7,8 @@ export type WorkerRequest =
   | { id: number; type: 'listGeoSiteCategories' }
   | { id: number; type: 'listGeoIpCategories' }
   | { id: number; type: 'getCategoryDomains'; category: string }
-  | { id: number; type: 'getCategoryCidrs'; category: string };
+  | { id: number; type: 'getCategoryCidrs'; category: string }
+  | { id: number; type: 'refreshCache' };
 
 export type ProgressStage = 'downloading' | 'parsing' | 'ready';
 export type ProgressMessage = { type: 'progress'; kind: 'geosite' | 'geoip'; stage: ProgressStage };
@@ -74,6 +75,10 @@ export class GeodataClient {
 
   getCategoryCidrs(category: string): Promise<CidrEntry[]> {
     return this.call({ type: 'getCategoryCidrs', category });
+  }
+
+  refreshCache(): Promise<void> {
+    return this.call({ type: 'refreshCache' });
   }
 
   onProgress(cb: (p: ProgressMessage) => void): () => void {
